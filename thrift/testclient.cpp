@@ -9,7 +9,7 @@
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/protocol/TBinaryProtocol.h>
 
-#include "Hbase.h"
+#include <Hbase.h>
 
 
 using namespace apache::thrift;
