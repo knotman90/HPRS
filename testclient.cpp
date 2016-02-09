@@ -2,7 +2,8 @@
 #include <iostream>
 #include <string.h>
 #include <vector>
-
+#include<map>
+#include<algorithm>
 #include <boost/lexical_cast.hpp>
 
 #include <thrift/transport/TSocket.h>
@@ -12,6 +13,7 @@
 #include <Hbase.h>
 
 #include <server_details.h>
+#include <binaryConverter.h>
 
 using namespace apache::thrift;
 using namespace apache::thrift::protocol;
@@ -25,252 +27,187 @@ typedef std::map<std::string,ColumnDescriptor> ColMap;
 typedef std::vector<TCell> CellVec;
 typedef std::map<std::string,TCell> CellMap;
 
-/* The function to print rows */
-static void printRow(const std::vector<TRowResult> &);
+using std::cout;
+using std::endl;
+template<
+        typename RETURN ,
+        typename Iterator ,
+        typename Lambda
+        >
+RETURN fold( Iterator s, Iterator e, RETURN D, Lambda l){
+    RETURN r = D;
+    for(Iterator i = s; i!=e; i++){
+        l(*i, r);
+    }
+    return r;
+}
 
-/* The function to print versions */
-static void printVersions(const std::string &row, const CellVec &);
+template<
+        typename Iterator ,
+        typename Lambda
+        >
+void forall( Iterator s, Iterator e, Lambda l){
+    for( ; s!=e; s++){
+        l(*s);
+
+    }
+}
+
+template< typename Iterator>
+void print(const Iterator start, const Iterator end, const std::string &separator = " "){
+    for(auto i=start;i!=end;i++){
+        std::cout << *i << separator;
+    }
+    std::cout << std::endl;
+}
+template< typename Iterator >
+void print(const Iterator start, const Iterator end,  int limit , const std::string &separator = " "){
+    int p=0;
+    auto i=start;
+    for(; i!=end && p < limit;i++,p++){
+        std::cout << *i << separator;
+    }
+    if(i!= end){
+        std::cout<<"\n[ OUTPUT CUT AFTER: "<<limit<<" ENTRY ]"<<std::endl;
+    }
+    std::cout << std::endl;
+}
+
+
+/**
+Print info about table name + Y if enabled (N if not)
+*/
+void printTablesStatus(HbaseClient &client){
+    std::vector<std::string> table_names;
+    client.getTableNames(table_names);
+    auto f = [&] (std::string &s, int& acc)
+    {
+        std::string enabled = " N";
+        if(client.isTableEnabled(s)){
+            enabled = " Y";
+            std::cout<<acc<<" Table "<<s<<" - "<<enabled<<std::endl;
+
+        }
+        std::vector<TRegionInfo> regionOfTable;
+        client.getTableRegions(regionOfTable,s);
+        print(regionOfTable.begin(),regionOfTable.end() , 100000,"\n");
+        return ++acc;
+
+    };
+
+    int a = fold(table_names.begin(),table_names.end(),0, f);
+    std::cout<<"Velue is "<<a<<std::endl;
+}
 
 
 
-int main(int argc, char** argv)
-{
+
+int main(int argc, char**argv){
+
+    HPRS::server_details<std::string> sd("localhost",9090);
+
     /* Connection to the Thrift Server */
-    boost::shared_ptr<TSocket> socket(new TSocket("localhost", 9090));
+    boost::shared_ptr<TSocket> socket(new TSocket(sd.hostname, sd.port));
     boost::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
     boost::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
 
     /* Create the Hbase client */
     HbaseClient client(protocol);
 
-    try {
+    try{
         transport->open();
-        std::string t("demo_table");
 
-        /* Scan all tables, look for the demo table and delete it. */
-        std::cout << "scanning tables..." << std::endl;
-        StrVec tables;
-        client.getTableNames(tables);
-        for (StrVec::const_iterator it = tables.begin(); it != tables.end(); ++it) {
-            std::cout << " found: " << *it << std::endl;
-            if (t == *it) {
-                if (client.isTableEnabled(*it)) {
-                    std::cout << " disabling table: " << *it << std::endl;
-                    client.disableTable(*it);
+        //print DB status and table infos
+        printTablesStatus(client);
+
+
+        std::vector<TRowResult> res;
+        std::vector<Text> columns;
+        columns.push_back("M");
+
+        std::map<Text, Text>  attributes;
+
+
+        Bytes cq_prefix;
+        cq_prefix="M:c000001_";
+        Bytes cq_suffix;
+
+
+        // a.columns.at((char*)cq).value;
+
+        /*ROW keys
+         * cd563d7777f23af71dca030ee46d7f1e00000000000000000000000000000038
+         * 97018a43cc1087b2ab701820357d80ca00000003DEM414ce2880000000000000000
+         *
+         * // client.getRowWithColumns(res, "Simulations_Data", "97018a43cc1087b2ab701820357d80ca00000003DEM414ce2880000000000000000",columns,attributes);
+         * */
+
+        std::string rowkey = "97018a43cc1087b2ab701820357d80ca00000003DEM412015300000000000000000";
+        //  client.getRowWithColumns(res, "Simulations_Data", "97018a43cc1087b2ab701820357d80ca00000003DEM414ce2880000000000000000",columns,attributes);
+        client.getRow(res, "Simulations_Data", rowkey,attributes);
+
+
+
+        for(int i=0;i<res.size();i++){
+
+            TRowResult a = res[i];
+            unsigned long long  d=38778168;
+            cq_suffix= convert_cast<unsigned long long*,  char*>(&d);
+            // IntegerToBytes((long long )1,cq,10);
+            Bytes cq = cq_prefix + cq_suffix;
+            int aa=1000;
+            int bb=0;
+
+            for(auto it = a.columns.begin(); it != a.columns.end() && aa >bb ; ++it , bb++) {
+
+                std::string key = it->first;
+                cout<<"KEYSIZE= "<<key.size()<<endl;
+                if(key.find("M:c") != std::string::npos){
+                    //print keys as it is
+                    std::cout<<key <<" = ";
+                    printHex(key, key.size());
+                    printHex(a.columns.at(key).value,sizeof(double)*3);
+                    //print number of the particle
+
+
+
+                    converter<int64_t> c;
+
+
+                    std::string key_suffix = key.substr(10,8); //binario long long
+                    int64_t res =  c.fromBytes(key_suffix.c_str(),true);//convert_cast<const  char*,   int64_t>(key_suffix.c_str());
+                    std::cout <<res<< " \n";
+
+
+
+
+                    int64_t test = c.fromBytes(c.toBytes((int64_t)11000));
+    std::cout <<test<< " \n";
+
                 }
-                std::cout << " deleting table: " << *it << std::endl;
-                client.deleteTable(*it);
+
+                // print_bytes(it->first.c_str(),15);
+
+
             }
+
+            /* std::cout<<"CQ\n"<<cq<<std::endl;
+            print_bytes(cq.c_str(),15);
+
+            std::cout<<cq<<std::endl;
+            print_bytes(cq.c_str(),15);
+*/
+
         }
+        // print(res.begin(),res.end(),10);
 
-	/* Create the demo table with two column families, entry: and unused: */
-	ColVec columns;
-	StrMap attr;
-	columns.push_back(ColumnDescriptor());
-	columns.back().name = "entry:";
-	columns.back().maxVersions = 10;
-	columns.push_back(ColumnDescriptor());
-	columns.back().name = "unused:";
-	std::cout << "creating table: " << t << std::endl;
-	try {
-		client.createTable(t, columns);
-	} catch (const AlreadyExists &ae) {
-		std::cerr << "WARN: " << ae.message << std::endl;
-	}
+        //97018a43cc1087b2ab701820357d80ca00000003DEM414ce2880000000000000000
 
-	ColMap columnMap;
-	client.getColumnDescriptors(columnMap, t);
-	std::cout << "column families in " << t << ": " << std::endl;
-	for (ColMap::const_iterator it = columnMap.begin(); it != columnMap.end(); ++it) {
-		std::cout << " column: " << it->second.name << ", maxVer: " << it->second.maxVersions << std::endl;
-	}
 
-	/* Test UTF-8 handling */
-	std::string invalid("foo-\xfc\xa1\xa1\xa1\xa1\xa1");
-	std::string valid("foo-\xE7\x94\x9F\xE3\x83\x93\xE3\x83\xBC\xE3\x83\xAB");
 
-	/* Non-utf8 is fine for data */
-	std::vector<Mutation> mutations;
-	mutations.push_back(Mutation());
-	mutations.back().column = "entry:foo";
-	mutations.back().value = invalid;
-	client.mutateRow(t, "foo", mutations, attr);
-
-	/* Trying empty strings is not valid
- * 	mutations.clear();
- * 		mutations.push_back(Mutation());
- * 			mutations.back().column = "entry:";
- * 				mutations.back().value = "";
- * 					client.mutateRow(t, "", mutations, attr); */
-
-	/* This row name is valid utf8 */
-	mutations.clear();
-	mutations.push_back(Mutation());
-	mutations.back().column = "entry:foo";
-	mutations.back().value = valid;
-	client.mutateRow(t, valid, mutations, attr);
-
-	/* Non-utf8 is now allowed in row names because HBase stores values as binary */
-	mutations.clear();
-	mutations.push_back(Mutation());
-	mutations.back().column = "entry:foo";
-	mutations.back().value = invalid;
-	client.mutateRow(t, invalid, mutations, attr);
-
-	/* Run a scanner on the rows we just created */
-	StrVec columnNames;
-	columnNames.push_back("entry:");
-	std::cout << "Starting scanner..." << std::endl;
-	int scanner = client.scannerOpen(t, "", columnNames, attr);
-	try {
-		while (true) {
-			std::vector<TRowResult> value;
-			client.scannerGet(value, scanner);
-			if (value.size() == 0)
-				break;
-			printRow(value);
-		}
-	} catch (const IOError &ioe) {
-		std::cerr << "FATAL: Scanner raised IOError" << std::endl;
-	}
-
-	client.scannerClose(scanner);
-	std::cout << "Scanner finished" << std::endl;
-
-	/* Run some operations on a bunch of rows */
-	for (int i = 0; i <= 11; i++) {
-	    /* Format row keys as "00000" to "00100" */
-	    char buf[32];
-	    sprintf(buf, "%05d", i);
-	    std::string row(buf);
-		
-	    std::vector<TRowResult> rowResult;
-		
-	    mutations.clear();
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "unused:";
-	    mutations.back().value = "DELETE_ME";
-		
-	    client.mutateRow(t, row, mutations, attr);
-	    client.getRow(rowResult, t, row, attr);
-	    printRow(rowResult);
-	    client.deleteAllRow(t, row, attr);
-		
-	    mutations.clear();
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:num";
-	    mutations.back().value = "0";
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:foo";
-	    mutations.back().value = "FOO";
-	    client.mutateRow(t, row, mutations, attr);
-	    client.getRow(rowResult, t, row, attr);
-	    printRow(rowResult);
-		
-	    /* Sleep to force later timestamp */
-	    poll(0, 0, 50);
-		
-	    mutations.clear();
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:foo";
-	    mutations.back().isDelete = true;
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:num";
-	    mutations.back().value = "-1";
-	    client.mutateRow(t, row, mutations, attr);
-	    client.getRow(rowResult, t, row, attr);
-	    printRow(rowResult);
-		
-	    mutations.clear();
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:num";
-	    mutations.back().value = boost::lexical_cast<std::string>(i);
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:sqr";
-	    mutations.back().value = boost::lexical_cast<std::string>(i*i);
-	    client.mutateRow(t, row, mutations, attr);
-	    client.getRow(rowResult, t, row, attr);
-	    printRow(rowResult);
-		
-	    mutations.clear();
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:num";
-	    mutations.back().value = "-999";
-	    mutations.push_back(Mutation());
-	    mutations.back().column = "entry:sqr";
-	    mutations.back().isDelete = true;
-	    client.mutateRowTs(t, row, mutations, 1, attr); /* Shouldn't override latest */
-	    client.getRow(rowResult, t, row, attr);
-	    printRow(rowResult);
-		
-	    CellVec versions;
-	    client.getVer(versions, t, row, "entry:num", 10, attr);
-	    printVersions(row, versions);
-	    assert(versions.size());
-	    std::cout << std::endl;
-		
-	    try {
-	        std::vector<TCell> value;
-	        client.get(value, t, row, "entry:foo", attr);
-	        if (value.size()) {
-	            std::cerr << "FATAL: shouldn't get here!" << std::endl;
-	            return -1;
-	        }
-	    } catch (const IOError &ioe) {
-	        /* Blank */
-	    }
-	}
-
-	/* Scan all rows/columns */
-	columnNames.clear();
-	client.getColumnDescriptors(columnMap, t);
-	std::cout << "The number of columns: " << columnMap.size() << std::endl;
-	for (ColMap::const_iterator it = columnMap.begin(); it != columnMap.end(); ++it) {
-	    std::cout << " column with name: " + it->second.name << std::endl;
-	    columnNames.push_back(it->second.name);
-	}
-	std::cout << std::endl;
-
-	std::cout << "Starting scanner..." << std::endl;
-	scanner = client.scannerOpenWithStop(t, "00020", "00040", columnNames, attr);
-	try {
-	    while (true) {
-	        std::vector<TRowResult> value;
-	        client.scannerGet(value, scanner);
-	        if (value.size() == 0)
-	            break;
-	        printRow(value);
-	    }
-	} catch (const IOError &ioe) {
-	    std::cerr << "FATAL: Scanner raised IOError" << std::endl;
-	}
-
-	client.scannerClose(scanner);
-	std::cout << "Scanner finished" << std::endl;
-	transport->close();
-    } catch (const TException &tx) {
+    }catch (const TException &tx) {
         std::cerr << "ERROR: " << tx.what() << std::endl;
     }
-}
 
-/* The function to print rows */
-static void printRow(const std::vector<TRowResult> &rowResult)
-{
-    for (size_t i = 0; i < rowResult.size(); i++) {
-        std::cout << "row: " << rowResult[i].row << ", cols: ";
-        for (CellMap::const_iterator it = rowResult[i].columns.begin();it != rowResult[i].columns.end(); ++it) {
-            std::cout << it->first << " => " << it->second.value << "; ";
-        }
-        std::cout << std::endl;
-    }
-}
-
-/* The function to print versions */
-static void printVersions(const std::string &row, const CellVec &versions)
-{
-    std::cout << "row: " << row << ", values: ";
-    for (CellVec::const_iterator it = versions.begin(); it != versions.end(); ++it) {
-        std::cout << (*it).value << "; ";
-    }
-    std::cout << std::endl;
+    return 0;
 }

@@ -34,4 +34,5 @@ include_directories( ${Boost_INCLUDE_DIRS} )
 
 
 add_executable(HPRS  testclient.cpp ${SRC_HBASE_FILES} ${SRC_utility})
+set_property(TARGET HPRS PROPERTY CXX_STANDARD 14)
 target_link_libraries(HPRS ${Boost_LIBS} ${THRIFT_LIBRARIES})
