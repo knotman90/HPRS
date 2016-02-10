@@ -142,7 +142,7 @@ int main(int argc, char**argv){
          * // client.getRowWithColumns(res, "Simulations_Data", "97018a43cc1087b2ab701820357d80ca00000003DEM414ce2880000000000000000",columns,attributes);
          * */
 
-        std::string rowkey = "97018a43cc1087b2ab701820357d80ca00000003DEM412015300000000000000000";
+        std::string rowkey = "97018a43cc1087b2ab701820357d80ca00000003DEM413f6af80000000000000000";
         //  client.getRowWithColumns(res, "Simulations_Data", "97018a43cc1087b2ab701820357d80ca00000003DEM414ce2880000000000000000",columns,attributes);
         client.getRow(res, "Simulations_Data", rowkey,attributes);
 
@@ -155,7 +155,7 @@ int main(int argc, char**argv){
             cq_suffix= convert_cast<unsigned long long*,  char*>(&d);
             // IntegerToBytes((long long )1,cq,10);
             Bytes cq = cq_prefix + cq_suffix;
-            int aa=1000;
+            int aa=100;
             int bb=0;
 
             for(auto it = a.columns.begin(); it != a.columns.end() && aa >bb ; ++it , bb++) {
@@ -165,24 +165,41 @@ int main(int argc, char**argv){
                 if(key.find("M:c") != std::string::npos){
                     //print keys as it is
                     std::cout<<key <<" = ";
-                    printHex(key, key.size());
-                    printHex(a.columns.at(key).value,sizeof(double)*3);
+                    printHex(key.c_str(), key.size());
+                    printHex(a.columns.at(key).value.c_str(),sizeof(double)*3);
                     //print number of the particle
-
-
 
                     converter<int64_t> c;
 
-
                     std::string key_suffix = key.substr(10,8); //binario long long
-                    int64_t res =  c.fromBytes(key_suffix.c_str(),true);//convert_cast<const  char*,   int64_t>(key_suffix.c_str());
+                    int64_t res =  c.fromBytes(reinterpret_cast<const unsigned char*>(key_suffix.c_str()),true);//convert_cast<const  char*,   int64_t>(key_suffix.c_str());
                     std::cout <<res<< " \n";
 
 
+                    converter<double> c_double;
 
+                    std::string value= a.columns.at(key).value;
 
-                    int64_t test = c.fromBytes(c.toBytes((int64_t)11000));
-    std::cout <<test<< " \n";
+                    cout<<"sizes: "<< sizeof(double) << " "<< value.size()<<endl;
+
+                   // std::reverse(value.begin(), value.end());
+                    //firstr coordinate
+                    std::string value_suffix = value.substr(0,8);
+                    double res_value =  c_double.fromBytes(reinterpret_cast<const unsigned char*>(value_suffix.c_str()),true);
+                    printHex(value_suffix.c_str(), value_suffix.size());
+
+                    printHex(c_double.toBytes(100.01d, true), 8);
+
+                     std::cout <<res_value<< " : ";
+                    //second coordinate
+                    value_suffix = value.substr(8,8);
+                     res_value =  c_double.fromBytes(reinterpret_cast<const unsigned char*>(value_suffix.c_str()),true);
+                    std::cout <<res_value<< " : ";
+                    //third coordinate
+                    value_suffix = value.substr(16,8);
+                     res_value =  c_double.fromBytes(reinterpret_cast<const unsigned char*>(value_suffix.c_str()),true);
+                    std::cout <<res_value<< " \n";
+
 
                 }
 

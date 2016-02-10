@@ -1,43 +1,61 @@
 #ifndef BINARYCONVERTE_H_
 #define BINARYCONVERTE_H_
+#include<iostream>
 
-typedef char byte;
+typedef unsigned char byte;
 
 template <class T>
 struct converter{
+
+ static const size_t size = sizeof(T);
+
     union conv{
         T value;
         byte bytes[ sizeof( T ) ];
     } c ;
 
-    T fromBytes( const  byte *bytes, bool reverse = false){
-        int size = sizeof(T);
-        if(reverse)
+    T fromBytes( const  byte *bytes, bool endianness = false){
+
+        if(endianness)
+            #pragma unroll
             for(int i=0;i<size;i++)
                 c.bytes[size-1-i] = bytes[i];
         else
+          #pragma unroll
             for(int i=0;i<size;i++)
                 c.bytes[i] = bytes[i];
 
         return c.value;
     }
 
-     byte* toBytes(const T& value){
+     byte* toBytes(const T& value,bool endianness = false){
         c.value =value;
+        if(endianness)
+            reverse();
         return c.bytes;
+    }
+
+    void reverse(){
+        #pragma unroll
+        for(int i=0;i<size/2;i++){
+            byte tmp = c.bytes[i];
+            c.bytes[i]=c.bytes[size-1-i];
+            c.bytes[size-1-i] = tmp;
+        }
+
     }
 
 };
 
 template<class T>
 void printHex(const T& key, size_t size){
+  std::cout.setf(std::ios::hex, std::ios::basefield);
+    for (int i = 0; i < size; i++){
+         if (i > 0) printf(":");
+            printf("%02X", (unsigned char)key[i]);
+}
+     printf("\n");
 
-                 for (int i = 0; i < size; i++)
-                 {
-                     if (i > 0) printf(":");
-                     printf("%02X", key[i]);
-                 }
-                 printf("\n");
 }
 
 template<class T>
@@ -65,17 +83,6 @@ void IntegerToBytes(long long val, T& b, uint offset) {
 }
 
 
-
-void print_bytes(const void *object, size_t size){
-  size_t i;
-
-  printf("[ ");
-  for(i = 0; i < size; i++)
-  {
-    printf("%02x ", ((const unsigned char *) object)[i] & 0xff);
-  }
-  printf("]\n");
-}
 
 
 
